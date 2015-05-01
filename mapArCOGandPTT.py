@@ -9,6 +9,8 @@ from BioClasses import Gene
 
 import globalVariables as gv
 import os
+from CogClasses import *
+import cPickle as pickle
 
 
 #Global variables
@@ -18,6 +20,8 @@ genomesDataPath = os.path.join(gv.LOCAL_DATA_FOLDER, 'Archea', 'genomes')
 projectDataPath = os.path.join('../', 'data', 'Archea')
 ptyFilePath = os.path.join(gv.LOCAL_DATA_FOLDER, 'Pty', 'Prok1402_3added.pty')
 ptyGenomesPath = os.path.join(gv.LOCAL_DATA_FOLDER, 'Pty', 'genomes')
+
+FLANK_LENGTH = 50
 
 def extract_pty_file(genomes_path, pty_file_path):
 
@@ -63,8 +67,8 @@ def get_ptt_map(folder_path):
                 coordinates = terms[0]
                 strand = terms[1]
                 pfrom, pto = coordinates.split('..')
-
-                curGene = Gene(source=chromosome, gid=gid, pFrom=pfrom, pTo=pto, organism=gnm_name, strand=strand)
+                cogid = terms[7]
+                curGene = Gene(source=chromosome, gid=gid, pFrom=pfrom, pTo=pto, organism=gnm_name, strand=strand, cogid=cogid)
                 ptt_map[gid] = curGene
 
     return ptt_map
@@ -145,15 +149,15 @@ def prepare_line(l):
 
     return out_line
 
+        
 
-
-def get_neighborhood_related_arcog_hits():
+def map_neighborhood_related_arcog_hits():
 
     """arcog_hits => ar14.arCOG.csv.
     This function gets only these hits from the big archive (indicated above),
     which are hit by arcogs included in the neighborhoods"""
 
-    class_neighborhood_files = ['arcog_nbr_integrase.txt','arcog_nbr_recombinase.txt','arcog_nbr_transposase.txt']
+    class_neighborhood_files = ['arcog_nbr_integrase.txt', 'arcog_nbr_recombinase.txt', 'arcog_nbr_transposase.txt']
     class_neighborhood_files = [os.path.join(projectDataPath, 'neighborhoods', f) for f in class_neighborhood_files]
     
     arcogs = []
@@ -162,7 +166,7 @@ def get_neighborhood_related_arcog_hits():
             arcogs += l.split()[1:]
 
     arcogs = set(arcogs)
-
+    
     arcog_hit_file_path = os.path.join(arGOGDataPath, 'ar14.arCOG.csv')
     new_arcog_hit_file_path = os.path.join(projectDataPath, 'map_arcogs_neighborhoods', 'filtered_mapped_ar14.arCOG.csv')
 
@@ -178,18 +182,181 @@ def get_neighborhood_related_arcog_hits():
                     try:
                         new_line = prepare_line(l)
                     except:
-                        print 'Couldn\'t find:',l.strip()
+                        print 'Couldn\'t find:', l.strip()
                     outfile.write(new_line)
                     cnt+=1
 
                 if cnt % 1000 == 0 and cnt>0:
                     print cnt
 
+def map_all_arcog_hits():
+    """arcog_hits => ar14.arCOG.csv.
+    Add coordinate informatio to the arcog_hits"""
+
+    arcog_hit_file_path = os.path.join(arGOGDataPath, 'ar14.arCOG.csv')
+    new_arcog_hit_file_path = os.path.join(projectDataPath, 'map_arcogs_neighborhoods', 'mapped_ar14.arCOG.csv')
+
+    cnt=0
+    with open(arcog_hit_file_path) as infile:
+        with open(new_arcog_hit_file_path,'w') as outfile:
+            for l in infile:
+                if not 'arCOG' in l:
+                    continue
+
+                try:
+                    new_line = prepare_line(l)
+                    outfile.write(new_line)
+                except:
+                    print 'Couldn\'t find:', l.strip()
+
+                cnt+=1
+
+                if cnt % 1000 == 0 and cnt>0:
+                    print cnt
+
+
+def get_genomes_of_neighborhoods():
+
+    class_neighborhood_files = ['arcog_nbr_integrase.txt', 'arcog_nbr_recombinase.txt', 'arcog_nbr_transposase.txt']
+    class_neighborhood_files = [os.path.join(projectDataPath, 'neighborhoods', f) for f in class_neighborhood_files]
+
+    arcog_hit_file = os.path.join(projectDataPath, 'map_arcogs_neighborhoods', 'mapped_sorted_ar14.arCOG.csv')
+
+    neighborhoods = []
+    arcog_hits = []
+
+    for f in class_neighborhood_files:
+        clsname = os.path.basename(f).split('.')[0].split('_')[-1]
+        neighborhoods += [COG_neighborhood(l.split()[1:], clsname=clsname) for l in open(f).readlines()]
+
+    for l in open(arcog_hit_file):
+        terms = l.split()
+        arcog_hits.append(Gene(source=terms[1], gid=terms[2], pFrom=terms[4], pTo=terms[5], organism=terms[0], strand=terms[3], arcogid=terms[6]))
+
+    organisms = set(g.organism for g in arcog_hits)
+
+    for organism in organisms:
+        org_arcog_hits = [g for g in arcog_hits if g.organism==organism]
+        org_arcog_hits.sort()
+        org_arcog_ids = [g.arcogid for g in org_arcog_hits]
+
+        for nbr in neighborhoods:
+            if nbr.set_cogs.issubset(org_arcog_ids):
+                nbr.organisms.append(organism)
+
+    selected_neighborhoods = [nbr for nbr in neighborhoods if len(nbr.organisms)>1]
+
+    selected_organisms = []
+    for nbr in selected_neighborhoods:
+        selected_organisms += nbr.organisms
+
+    selected_arcog_hits = []
+    for organism in set(selected_organisms):
+        selected_arcog_hits += [g for g in arcog_hits if g.organism==organism]
+
+    return selected_neighborhoods, selected_arcog_hits
+
+def process_neighborhoods_of_arcog_hits(neighborhoods, arcog_hits):
+
+    classes = ['integrase', 'transposase', 'recombinase']
+
+    nbrhds_out_dir = os.path.join(projectDataPath, 'neighborhoods', 'neighborhoods')
+
+    cnt = 1
+    block_fmt = '%s,%s,%s,%s'
+    for nbr in neighborhoods:
+
+        out_columns = []
+
+        for organism in nbr.organisms:
+            org_arcog_hits = [g for g in arcog_hits if g.organism==organism]
+            org_arcog_hit_gis = [g.gid for g in org_arcog_hits]
+
+            ptt_path = os.path.join(genomesDataPath, organism)
+            # ptt_map = get_ptt_map(ptt_path)
+            #
+            # for k,v in ptt_map.items():
+            #     if not k in org_arcog_hit_gis:
+            #         org_arcog_hits.append(v)
+
+            org_arcog_hits.sort()
+            left_flank, nbr_block, right_flank = [], [], []
+
+            nbr_size = len(nbr.cogs)
+            tmp_cnt=0
+            for i in range(len(org_arcog_hits)):
+                if org_arcog_hits[i].arcogid in nbr.cogs:
+                    nbr_block.append(org_arcog_hits[i])
+            print 'Nbr_block size:', len(nbr_block)
+            for g in nbr_block:
+                print g
+            print len(nbr.cogs)
+            print
+
+            org_block = []
+
+        sys.exit()
+        nbr_file_name = 'nbr_%d_%d.csv' % (len(nbr.cogs), cnt)
+
+
+
+
+
+
+
+
 if __name__=='__main__':
 
-    get_neighborhood_related_arcog_hits()
+    # get_neighborhood_related_arcog_hits()
+    # map_all_arcog_hits()
     # extract_pty_file(ptyGenomesPath, ptyFilePath)
 
     # map_arcog_with_pty(arcogfile, mapped_arCog_file)
+    selected_neighborhoods, selected_arcog_hits = get_genomes_of_neighborhoods()
+
+    integrase_arcogs   = [l.strip() for l in open(os.path.join(projectDataPath, 'selected_arcogs', 'arcogs_integrase.txt'  )).readlines()]
+    recombinase_arcogs = [l.strip() for l in open(os.path.join(projectDataPath, 'selected_arcogs', 'arcogs_recombinase.txt')).readlines()]
+    transposase_arcogs = [l.strip() for l in open(os.path.join(projectDataPath, 'selected_arcogs', 'arcogs_transposase.txt')).readlines()]
+
+    integrases, transposases, recombinases = 0, 0, 0
+
+    for arcog_hit in selected_arcog_hits:
+        if arcog_hit.arcogid in integrase_arcogs:
+            arcog_hit.set_product_enzyme('integrase')
+            integrases += 1
+
+        if arcog_hit.arcogid in transposase_arcogs:
+            arcog_hit.set_product_enzyme('transposase')
+            transposases += 1
+
+        if arcog_hit.arcogid in recombinase_arcogs:
+            arcog_hit.set_product_enzyme('recombinase')
+            recombinases += 1
+
+
+    pickle.dump(selected_neighborhoods, open('selected_nbrhoods.p', 'w'))
+    pickle.dump(selected_arcog_hits, open('selected_arcog_hits.p', 'w'))
+
+    selected_arcog_hits = pickle.load(open('selected_arcog_hits.p'))
+    selected_neighborhoods = pickle.load(open('selected_nbrhoods.p'))
+
+    orgname = selected_arcog_hits[0].organism
+    org_hits = [g for g in selected_arcog_hits if g.organism==orgname]
+    org_hits.sort()
+    for g in org_hits[:2]:
+        print g
+    sys.exit()
+
+    # for n in selected_neighborhoods:
+    #     print n.classname,  n.cogs
+    #     print n.organisms
+
+    process_neighborhoods_of_arcog_hits(selected_neighborhoods, selected_arcog_hits)
+
+
+
+
+
+
 
 

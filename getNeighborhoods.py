@@ -181,8 +181,6 @@ def extractNeighborhoodsClass(classFile):
 
 def extractNeighborhoods():
 
-
-
     arCogFiles=['selected_arcogs_integrase.txt',
                 'selected_arcogs_recombinase.txt',
                 'selected_arcogs_transposase.txt']
