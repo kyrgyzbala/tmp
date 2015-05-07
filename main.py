@@ -2,14 +2,12 @@ __author__ = 'Sanjarbek Hudaiberdiev'
 
 import sys
 
-from getNeighborhoods import *
+from neighborhood_definitions import *
 
 if __name__ == '__main__':
 
-    classes = ['integrase', 'recombinase', 'transposase']
 
-    for c in classes:
-        getMatchingNeighborhoodsFromArcogArchive(c)
+
     # getGenomicFiles()
 
     # extractNeighborhoods()

@@ -1,5 +1,8 @@
 __author__ = 'Sanjarbek Hudaiberdiev'
 
+import sys
+sys.path.append('/users/hudaiber/Projects/lib/BioPy')
+from BioClasses import Gene
 
 class COG(object):
     """docstring for ClassName"""
@@ -10,12 +13,11 @@ class COG(object):
 
 class COG_neighborhood(object):
     """COG group which was observed in more than one genome in vicinity"""
-    def __init__(self, coglist, clsname=None):
+    def __init__(self, coglist):
         self.cogs = coglist
         self.set_cogs = set(coglist)
         self.size = len(coglist)
-        self.classname = clsname
-        self.organisms = []
+        self.organisms = set()
 
     def __cmp__(self, other):
         if self.size > other.size:
@@ -24,3 +26,27 @@ class COG_neighborhood(object):
             return -1
         else:
             return 0
+
+
+class Organism(object):
+    def __init__(self, name, sources=[]):
+        self.name = name
+        self.sources = sources
+
+
+class REP_neighborhood(object):
+    def __init__(self, cogs):
+        self.cogs = cogs
+        self.organisms = []
+
+
+class REP_organism(object):
+    def __init__(self, name):
+        self.name=name
+        self.sources = []
+
+
+class REP_source(object):
+    def __init__(self, name):
+        self.name = name
+        self.blocks = []
