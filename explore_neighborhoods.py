@@ -4,7 +4,7 @@ import sys
 sys.path.append('/users/hudaiber/Projects/SystemFiles/')
 sys.path.append('/users/hudaiber/Projects/lib/BioPy')
 from BioClasses import Gene
-import globalVariables as gv
+# import globalVariables as gv
 import os
 import CogClasses as cc
 import cPickle as pickle
@@ -14,9 +14,11 @@ import xlsxwriter as x
 
 #Global variables
 
-genomesDataPath = os.path.join(gv.LOCAL_DATA_FOLDER, 'Archea', 'genomes')
-projectDataPath = os.path.join('../', 'data', 'Archea')
-ptyGenomesPath = os.path.join(gv.LOCAL_DATA_FOLDER, 'Pty', 'genomes')
+# genomesDataPath = os.path.join(gv.LOCAL_DATA_FOLDER, 'Archea', 'genomes')
+# projectDataPath = os.path.join('../', 'data', 'Archea')
+# ptyGenomesPath = os.path.join(gv.LOCAL_DATA_FOLDER, 'Pty', 'genomes')
+
+projectDataPath = '/home/sanjarbek/NCBI_projects/NewSystems/data/Archea/'
 
 FLANK_LENGTH = 50
 
@@ -41,7 +43,6 @@ def get_cog_def():
 
 
 def get_arcog_def():
-
     def_map = {}
     for l in open(os.path.join(projectDataPath, 'additional', 'arCOGdef.txt')):
         terms = l.split()
@@ -49,6 +50,7 @@ def get_arcog_def():
         v = ' '.join(terms[3:]) if terms[2]=='-' else ' '.join(terms[2:])
         def_map[k]=v
     return def_map
+
 
 def get_selected_neighborhoods():
     # 'arcog_nbr_recombinase.txt' is not included, because no neighborhoods found to have recombinase arcog ids
@@ -130,6 +132,7 @@ def label_class_arcogs(blocks):
             if g.arcogid in transposase_arcogs:
                 g.arcogid = 't_'+g.arcogid
     return blocks
+
 
 def add_flanks(nbr_blocks, ptt_path):
 
@@ -214,6 +217,10 @@ def align_neighborhoods_flanking_regions(neighborhoods):
 
 def write_to_file(nbr, nbr_rep_file):
 
+    cog_def = get_cog_def()
+
+    arcog_def = get_arcog_def()
+
     workbook = x.Workbook(nbr_rep_file)
     worksheet = workbook.add_worksheet()
 
@@ -233,35 +240,50 @@ def write_to_file(nbr, nbr_rep_file):
     header_format.set_align('center')
 
     worksheet.merge_range(0, 0, 0, 10, 'Neighborhood: '+ ' '.join(nbr.cogs), title_format)
-
     left_border = 0
-    for org in nbr.organisms:
-        org_len = (row_len+1)*len(org.sources)
-        worksheet.merge_range(1, left_border, 1, left_border + org_len-2, org.name, header_format)
 
+    for org in nbr.organisms:
+        org_len = (row_len+1)*sum([1 for source in org.sources for b in source.blocks])
+        worksheet.merge_range(1, left_border, 1, left_border + org_len-2, org.name, header_format)
         for source in org.sources:
-            worksheet.merge_range(2, left_border, 2, left_border + row_len-1, source.name, header_format)
-            worksheet.write_row(3, left_border, column_names, header_format)
-            left_border += row_len+1
+            for block in source.blocks:
+                worksheet.merge_range(2, left_border, 2, left_border + row_len-1, source.name, header_format)
+                worksheet.write_row(3, left_border, column_names, header_format)
+                left_border += row_len+1
 
     # Writing the data
 
     left_border = 0
-    for org in nbr.organisms:
-        org_len = (row_len+1)*len(org.sources)
-        worksheet.merge_range(1, left_border, 1, left_border + org_len-2, org.name, header_format)
 
+    for org in nbr.organisms:        
         for source in org.sources:
-            worksheet.merge_range(2, left_border, 2, left_border + row_len-1, source.name, header_format)
-            worksheet.write_row(3, left_border, column_names, header_format)
-            left_border += row_len+1
+            for block in source.blocks:
+                top_border = 5
+                for i in range(len(block)):
+                    cur_seq = block[i]
+                    if cur_seq.cogid==None:
+                        cur_seq.cogid='-'
+                    cur_cogid = cur_seq.cogid if len(cur_seq.cogid)==7 else cur_seq.cogid[:-1]
+                    cog_desc = cog_def[cur_cogid] if cog_def.has_key(cur_cogid) else '-'
+
+                    arcog_desc = ' '
+                    if cur_seq.arcogid:
+                        
+                        if len(cur_seq.arcogid.split())>1:
+                            for arcogid in cur_seq.arcogid.split():
+                                arcog_desc += arcog_def[arcogid[2:]] if '_' in arcogid else arcog_def[arcogid] + ' || '
+                        else:
+                            arcog_desc = arcog_def[cur_seq.arcogid[2:]] if '_' in cur_seq.arcogid else arcog_def[cur_seq.arcogid]
+                    
+                    data_raw = [cur_seq.pFrom, cur_seq.pTo, cur_seq.strand, cog_desc, arcog_desc,' ']
+                    worksheet.write_row(i+top_border, left_border, data_raw)            
+                left_border += row_len+1
 
 
     # worksheet.write('B1', 'Cell B1', format)
 
 
     workbook.close()
-
 
 
 def write_to_files(nbr_to_report, path):
