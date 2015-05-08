@@ -4,7 +4,7 @@ import sys
 sys.path.append('/users/hudaiber/Projects/SystemFiles/')
 sys.path.append('/users/hudaiber/Projects/lib/BioPy')
 from BioClasses import Gene
-# import globalVariables as gv
+import globalVariables as gv
 import os
 import CogClasses as cc
 import cPickle as pickle
@@ -14,11 +14,11 @@ import xlsxwriter as x
 
 #Global variables
 
-# genomesDataPath = os.path.join(gv.LOCAL_DATA_FOLDER, 'Archea', 'genomes')
-# projectDataPath = os.path.join('../', 'data', 'Archea')
-# ptyGenomesPath = os.path.join(gv.LOCAL_DATA_FOLDER, 'Pty', 'genomes')
+genomesDataPath = os.path.join(gv.LOCAL_DATA_FOLDER, 'Archea', 'genomes')
+projectDataPath = os.path.join('../', 'data', 'Archea')
+ptyGenomesPath = os.path.join(gv.LOCAL_DATA_FOLDER, 'Pty', 'genomes')
 
-projectDataPath = '/home/sanjarbek/NCBI_projects/NewSystems/data/Archea/'
+# projectDataPath = '/home/sanjarbek/NCBI_projects/NewSystems/data/Archea/'
 
 FLANK_LENGTH = 50
 
@@ -114,8 +114,9 @@ def get_match_all_members(arcog_hits, arcog_ids):
 
 
 def get_matching_blocks(arcog_hits, arcog_ids):
-
-    return get_match_all_members(arcog_hits, arcog_ids)
+    matching_blocks = get_match_all_members(arcog_hits, arcog_ids)
+    matching_blocks = merge_nearby_blocks(matching_blocks)
+    return matching_blocks
 
 
 def label_class_arcogs(blocks):
@@ -239,26 +240,37 @@ def write_to_file(nbr, nbr_rep_file):
     header_format.set_bold()
     header_format.set_align('center')
 
+    top_border = 0
+
     worksheet.merge_range(0, 0, 0, 10, 'Neighborhood: '+ ' '.join(nbr.cogs), title_format)
+    top_border += 1
+
+    for arcogid in nbr.cogs:
+        worksheet.merge_range(top_border, 0, top_border, 10, '%s:  %s'%(arcogid, arcog_def[arcogid]))
+        top_border += 1
+
     left_border = 0
 
     for org in nbr.organisms:
+        cur_top_border = top_border
         org_len = (row_len+1)*sum([1 for source in org.sources for b in source.blocks])
-        worksheet.merge_range(1, left_border, 1, left_border + org_len-2, org.name, header_format)
+        worksheet.merge_range(cur_top_border, left_border, cur_top_border, left_border + org_len-2, org.name, header_format)
+        cur_top_border += 1
+
         for source in org.sources:
             for block in source.blocks:
-                worksheet.merge_range(2, left_border, 2, left_border + row_len-1, source.name, header_format)
-                worksheet.write_row(3, left_border, column_names, header_format)
+                worksheet.merge_range(cur_top_border, left_border, cur_top_border, left_border + row_len-1, source.name, header_format)
+                worksheet.write_row(cur_top_border+1, left_border, column_names, header_format)
                 left_border += row_len+1
 
+    top_border += 4
     # Writing the data
 
     left_border = 0
 
-    for org in nbr.organisms:        
+    for org in nbr.organisms:
         for source in org.sources:
             for block in source.blocks:
-                top_border = 5
                 for i in range(len(block)):
                     cur_seq = block[i]
                     if cur_seq.cogid==None:
@@ -268,7 +280,6 @@ def write_to_file(nbr, nbr_rep_file):
 
                     arcog_desc = ' '
                     if cur_seq.arcogid:
-                        
                         if len(cur_seq.arcogid.split())>1:
                             for arcogid in cur_seq.arcogid.split():
                                 arcog_desc += arcog_def[arcogid[2:]] if '_' in arcogid else arcog_def[arcogid] + ' || '
