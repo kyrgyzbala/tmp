@@ -79,7 +79,7 @@ def pack_neighborhoods(neighborhood_arcogid_lists):
     arcog_hits = arcog_hits_to_genes()
     organisms = set(g.organism for g in arcog_hits)
 
-    for organism in organisms:        
+    for organism in organisms:
         org_arcog_hits = [g for g in arcog_hits if g.organism == organism]
         source_names = set(g.src for g in org_arcog_hits)
 
@@ -89,7 +89,7 @@ def pack_neighborhoods(neighborhood_arcogid_lists):
             source_arcog_ids = set([g.arcogid for g in source_arcog_hits])
 
             for nbr in neighborhoods:
-                if nbr.set_cogs < source_arcog_ids:
+                if nbr.set_cogs.intersection(source_arcog_ids):
                     nbr.organisms.add(organism)
 
     selected_neighborhoods = [nbr for nbr in neighborhoods if len(nbr.organisms)>1]
@@ -100,6 +100,7 @@ def pack_neighborhoods(neighborhood_arcogid_lists):
 def get_match_all_members(arcog_hits, arcog_ids):
 
     """From arcog_hits, get regions where all of the arcogs in arcog_ids exists"""
+
     blocks=[]
     block_size = 2*len(arcog_ids)
 
@@ -177,17 +178,13 @@ def add_flanks(nbr_blocks, ptt_path):
 
 def align_neighborhoods_flanking_regions(neighborhoods):
 
-    nbrs_out_dir = os.path.join(projectDataPath, 'neighborhoods', 'neighborhoods')
     cnt = 1
-    cog_def_map = get_cog_def()
-    arcog_def_map = get_arcog_def()
     arcog_hits = arcog_hits_to_genes()
 
     nbr_to_report = []
 
     for nbr in neighborhoods:
         cnt+=1
-        out_organisms, out_sources, out_columns, out_columns_depo = [], [], [], []
         cur_rep_nbr = cc.REP_neighborhood(nbr.cogs)
 
         for organism in nbr.organisms:
@@ -309,15 +306,17 @@ def write_to_files(nbr_to_report, path):
 
 if __name__=='__main__':
 
-    # selected_neighborhood_arcogid_lists = get_selected_neighborhoods()
-    # selected_neighborhoods = pack_neighborhoods(selected_neighborhood_arcogid_lists)
+    selected_neighborhood_arcogid_lists = get_selected_neighborhoods()
+    selected_neighborhoods = pack_neighborhoods(selected_neighborhood_arcogid_lists)
+    print len(selected_neighborhoods)
+    print selected_neighborhoods[0]
     #
     # pickle.dump(selected_neighborhoods, open('selected_nbrhoods.p', 'w'))
     # selected_neighborhoods = pickle.load(open('selected_nbrhoods.p'))
     #
     # rep_neighborhoods = align_neighborhoods_flanking_regions(selected_neighborhoods)
     # pickle.dump(rep_neighborhoods, open('rep_neighborhoods.p','w'))
-    rep_neighborhoods = pickle.load(open('rep_neighborhoods.p'))
-
-    report_files_path = os.path.join(projectDataPath, 'report', 'xls')
-    write_to_files(rep_neighborhoods, report_files_path)
+    # rep_neighborhoods = pickle.load(open('rep_neighborhoods.p'))
+    #
+    # report_files_path = os.path.join(projectDataPath, 'report', 'xls')
+    # write_to_files(rep_neighborhoods, report_files_path)
