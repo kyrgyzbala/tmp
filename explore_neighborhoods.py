@@ -112,6 +112,10 @@ def get_matching_blocks(arcog_hits, arcog_ids, matching_rate):
             blocks.append(block)
 
     if blocks:
+        for block in blocks:
+            for g in block:
+                print g
+            print
         print len(blocks)
         sys.exit()
 
