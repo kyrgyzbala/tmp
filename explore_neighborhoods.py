@@ -11,6 +11,7 @@ import cPickle as pickle
 import tools as t
 from collections import Counter
 import xlsxwriter as x
+import time
 
 #Global variables
 
@@ -21,6 +22,7 @@ ptyGenomesPath = os.path.join(gv.LOCAL_DATA_FOLDER, 'Pty', 'genomes')
 # projectDataPath = '/home/sanjarbek/NCBI_projects/NewSystems/data/Archea/'
 
 FLANK_LENGTH = 50
+NEIGHBORHOOD_MATCHING_RATE = 1
 
 
 def arcog_hits_to_genes():
@@ -70,9 +72,9 @@ def pack_neighborhoods(neighborhood_arcogid_lists):
 
     """    For each list of arcogs in 'neighborhoods', form COG_neighborhood objects with:
            - Organisms that it was found in
-           - For each organism; for each source, retreive arcog_hit lines as Gene objects"""
+           (deprecated) - For each organism; for each source, retreive arcog_hit lines as Gene objects"""
 
-    neighborhoods=[]
+    neighborhoods = []
     for arcogid_list in neighborhood_arcogid_lists:
         neighborhoods.append(cc.COG_neighborhood(coglist=arcogid_list))
 
@@ -97,27 +99,23 @@ def pack_neighborhoods(neighborhood_arcogid_lists):
     return selected_neighborhoods
 
 
-def get_match_all_members(arcog_hits, arcog_ids):
+def get_matching_blocks(arcog_hits, arcog_ids, matching_rate):
 
-    """From arcog_hits, get regions where all of the arcogs in arcog_ids exists"""
-
-    blocks=[]
+    blocks = []
     block_size = 2*len(arcog_ids)
 
-    for i in range(0, len(arcog_hits)-block_size+1, block_size):
+    for i in range(0, len(arcog_hits)-block_size+1):
         block = arcog_hits[i:i+block_size]
         block_arcogs = [g.arcogid for g in block]
 
-        if sum([1 for a in arcog_ids if a in block_arcogs]) == len(arcog_ids):
+        if len(set(a for a in arcog_ids if a in block_arcogs)) / float(len(arcog_ids)) >= matching_rate:
             blocks.append(block)
 
+    if blocks:
+        print len(blocks)
+        sys.exit()
+
     return blocks
-
-
-def get_matching_blocks(arcog_hits, arcog_ids):
-    matching_blocks = get_match_all_members(arcog_hits, arcog_ids)
-    matching_blocks = merge_nearby_blocks(matching_blocks)
-    return matching_blocks
 
 
 def label_class_arcogs(blocks):
@@ -184,20 +182,20 @@ def align_neighborhoods_flanking_regions(neighborhoods):
     nbr_to_report = []
 
     for nbr in neighborhoods:
-        cnt+=1
+        cnt += 1
         cur_rep_nbr = cc.REP_neighborhood(nbr.cogs)
 
         for organism in nbr.organisms:
 
             cur_rep_organism = cc.REP_organism(organism)
-            org_arcog_hits = [g for g in arcog_hits if g.organism==organism]
+            org_arcog_hits = [g for g in arcog_hits if g.organism == organism]
             sources = set([g.src for g in org_arcog_hits])
 
             for source in sources:
-                source_arcog_hits = [g for g in org_arcog_hits if g.src==source]
+                source_arcog_hits = [g for g in org_arcog_hits if g.src == source]
                 source_arcog_hits.sort()
                 ptt_path = os.path.join(genomesDataPath, organism, '%s.ptt'%source)
-                nbr_blocks = get_matching_blocks(source_arcog_hits, nbr.cogs)
+                nbr_blocks = get_matching_blocks(source_arcog_hits, nbr.cogs, NEIGHBORHOOD_MATCHING_RATE)
 
                 if nbr_blocks:
                     cur_rep_source = cc.REP_source(source)
@@ -306,15 +304,15 @@ def write_to_files(nbr_to_report, path):
 
 if __name__=='__main__':
 
-    selected_neighborhood_arcogid_lists = get_selected_neighborhoods()
-    selected_neighborhoods = pack_neighborhoods(selected_neighborhood_arcogid_lists)
-    print len(selected_neighborhoods)
-    print selected_neighborhoods[0]
+    t = time.time()
+
+    # selected_neighborhood_arcogid_lists = get_selected_neighborhoods()
+    # selected_neighborhoods = pack_neighborhoods(selected_neighborhood_arcogid_lists)
     #
     # pickle.dump(selected_neighborhoods, open('selected_nbrhoods.p', 'w'))
-    # selected_neighborhoods = pickle.load(open('selected_nbrhoods.p'))
-    #
-    # rep_neighborhoods = align_neighborhoods_flanking_regions(selected_neighborhoods)
+    selected_neighborhoods = pickle.load(open('selected_nbrhoods.p'))
+
+    rep_neighborhoods = align_neighborhoods_flanking_regions(selected_neighborhoods)
     # pickle.dump(rep_neighborhoods, open('rep_neighborhoods.p','w'))
     # rep_neighborhoods = pickle.load(open('rep_neighborhoods.p'))
     #
