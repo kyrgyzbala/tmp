@@ -50,3 +50,20 @@ class REP_source(object):
     def __init__(self, name):
         self.name = name
         self.blocks = []
+
+class Block(object):
+    def __init__(self,genes,start,end):
+        self.genes = genes
+        self.start = start
+        self.end = end
+
+    def __cmp__(self, other):
+        if self.start > other.start:
+            return 1
+        elif self.start < other.start:
+            return -1
+        else:
+            return 0
+
+    def __sub__(self, other):
+        return self.start - other.end

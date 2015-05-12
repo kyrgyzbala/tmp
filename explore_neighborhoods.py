@@ -98,25 +98,39 @@ def pack_neighborhoods(neighborhood_arcogid_lists):
 
     return selected_neighborhoods
 
+def merge_to_regions(gene_list):
+
+    out_list = []
+    gid_list = []
+
+    for g in gene_list:
+        if g.gid not in gid_list:
+            out_list.append(g)
+            gid_list.append(g.gid)
+
+    return sorted(out_list)
 
 def get_matching_blocks(arcog_hits, arcog_ids, matching_rate):
 
     blocks = []
     block_size = 2*len(arcog_ids)
+    matching_window_holder = []
 
     for i in range(0, len(arcog_hits)-block_size+1):
         block = arcog_hits[i:i+block_size]
         block_arcogs = [g.arcogid for g in block]
 
         if len(set(a for a in arcog_ids if a in block_arcogs)) / float(len(arcog_ids)) >= matching_rate:
-            blocks.append(block)
+            matching_window_holder += block
 
-    if blocks:
-        for block in blocks:
-            for g in block:
-                print g
-            print
-        print len(blocks)
+    if matching_window_holder:
+
+        matching_window_holder = merge_to_regions(matching_window_holder)
+
+
+
+
+
         sys.exit()
 
     return blocks
