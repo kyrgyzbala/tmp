@@ -11,7 +11,7 @@ import cPickle as pickle
 import tools as t
 from collections import Counter
 import xlsxwriter as x
-import time
+import argparse
 
 #Global variables
 
@@ -21,7 +21,7 @@ ptyGenomesPath = os.path.join(gv.LOCAL_DATA_FOLDER, 'Pty', 'genomes')
 
 # projectDataPath = '/home/sanjarbek/NCBI_projects/NewSystems/data/Archea/'
 
-FLANK_LENGTH = 50
+TOTAL_WINDOW_SIZE = 100
 NEIGHBORHOOD_MATCHING_RATE = 1
 
 
@@ -32,26 +32,6 @@ def arcog_hits_to_genes():
         terms = l.split()
         arcog_hits.append(Gene(source=terms[1], gid=terms[2], pFrom=terms[4], pTo=terms[5], organism=terms[0], strand=terms[3], arcogid=terms[6]))
     return arcog_hits
-
-
-def get_class_arcogs(class_name):
-    fname = os.path.join(projectDataPath, 'selected_arcogs', 'arcogs_%s.txt'%class_name)
-    return [l.strip() for l in open(fname).readlines()]
-
-
-def get_cog_def():
-
-    return {l.split()[0]:' '.join(l.split()[1:]) for l in open(os.path.join(projectDataPath,'additional','COGdef.txt'))}
-
-
-def get_arcog_def():
-    def_map = {}
-    for l in open(os.path.join(projectDataPath, 'additional', 'arCOGdef.txt')):
-        terms = l.split()
-        k = terms[0]
-        v = ' '.join(terms[3:]) if terms[2]=='-' else ' '.join(terms[2:])
-        def_map[k]=v
-    return def_map
 
 
 def get_selected_neighborhoods():
@@ -98,17 +78,6 @@ def pack_neighborhoods(neighborhood_arcogid_lists):
 
     return selected_neighborhoods
 
-def merge_to_regions(gene_list):
-
-    out_list = []
-    gid_list = []
-
-    for g in gene_list:
-        if g.gid not in gid_list:
-            out_list.append(g)
-            gid_list.append(g.gid)
-
-    return sorted(out_list)
 
 def get_matching_blocks(arcog_hits, arcog_ids, matching_rate):
 
@@ -125,30 +94,27 @@ def get_matching_blocks(arcog_hits, arcog_ids, matching_rate):
 
     if matching_window_holder:
 
-        matching_window_holder = merge_to_regions(matching_window_holder)
+        matching_window_holder = t.merge_to_regions(matching_window_holder)
+        matching_window_holder = [g for g in matching_window_holder if g.arcogid in arcog_ids]
 
-
-
-
-
-        sys.exit()
+        blocks = t.merge_to_blocks(matching_window_holder, arcog_hits, TOTAL_WINDOW_SIZE)
 
     return blocks
 
 
 def label_class_arcogs(blocks):
-    integrase_arcogs = get_class_arcogs('integrase')
-    transposase_arcogs = get_class_arcogs('transposase')
-    recombinase_arcogs = get_class_arcogs('recombinase')
+    integrase_arcogs = t.get_class_arcogs('integrase')
+    transposase_arcogs = t.get_class_arcogs('transposase')
+    recombinase_arcogs = t.get_class_arcogs('recombinase')
 
     for block in blocks:
         for g in block:
             if g.arcogid in recombinase_arcogs:
-                g.arcogid = 'r_'+g.arcogid
+                g.arcogid += 'r_'
             if g.arcogid in integrase_arcogs:
-                g.arcogid = 'i_'+g.arcogid
+                g.arcogid += 'i_'
             if g.arcogid in transposase_arcogs:
-                g.arcogid = 't_'+g.arcogid
+                g.arcogid += 't_'
     return blocks
 
 
@@ -156,37 +122,29 @@ def add_flanks(nbr_blocks, ptt_path):
 
     out_blocks = []
     ptt_map = t.get_ptt_map(ptt_path)
+    seqs = sorted(ptt_map.values())
+    gids = [s.gid for s in seqs]
 
     for block in nbr_blocks:
 
-        if len(block) != len(set(g.gid for g in block)):
-            new_block=[]
-            block_gis = [g.gid for g in block]
-            block_gis_count = Counter(block_gis)
-            for gi, cnt in block_gis_count.items():
-                if cnt > 1:
-                    gi_seqs = [g for g in block if g.gid==gi]
-                    cur_seq = gi_seqs[0]
-                    cur_seq.arcogid = " ".join([g.arcogid for g in gi_seqs])
-                    cur_seq.cogid = ptt_map[gi].cogid
-                else:
-                    cur_seq = [g for g in block if g.gid==gi][0]
-                    cur_seq.cogid = ptt_map[gi].cogid
-                new_block.append(cur_seq)
-            block = new_block
         block.sort()
-        first, last = block[0], block[-1]
+        first, last = gids.index(block[0].gid), gids.index(block[-1].gid)
 
-        source_genes = ptt_map.values()
-        source_genes.sort()
+        if last-first == TOTAL_WINDOW_SIZE:
+            out_blocks.append(block)
+            continue
 
-        for i in range(len(source_genes)):
-            if source_genes[i].gid == first.gid:
-                left_flank = source_genes[i-FLANK_LENGTH:i]
-            if source_genes[i].gid == last.gid:
-                right_flank = source_genes[i:i+FLANK_LENGTH]
-                break
-        block = left_flank+block+right_flank
+        flank_length = (TOTAL_WINDOW_SIZE - len(block))/2
+        first -= flank_length
+        last += flank_length
+
+        temp_seqs = seqs[first-1:last]
+        block_gids = [s.gid for s in block]
+        for s in temp_seqs:
+            s.arcogid = ''
+
+        block += [s for s in temp_seqs if s.gid not in block_gids]
+        block.sort()
         out_blocks.append(block)
 
     return out_blocks
@@ -200,6 +158,9 @@ def align_neighborhoods_flanking_regions(neighborhoods):
     nbr_to_report = []
 
     for nbr in neighborhoods:
+        print 'Starting neighborhood no: %s'%cnt
+        print 'Neighborhoods arcogids:', nbr.cogs
+        print
         cnt += 1
         cur_rep_nbr = cc.REP_neighborhood(nbr.cogs)
 
@@ -213,13 +174,16 @@ def align_neighborhoods_flanking_regions(neighborhoods):
                 source_arcog_hits = [g for g in org_arcog_hits if g.src == source]
                 source_arcog_hits.sort()
                 ptt_path = os.path.join(genomesDataPath, organism, '%s.ptt'%source)
+
                 nbr_blocks = get_matching_blocks(source_arcog_hits, nbr.cogs, NEIGHBORHOOD_MATCHING_RATE)
 
                 if nbr_blocks:
+
                     cur_rep_source = cc.REP_source(source)
-                    nbr_blocks = label_class_arcogs(nbr_blocks)
+                    # nbr_blocks = label_class_arcogs(nbr_blocks)
                     cur_rep_source.blocks = add_flanks(nbr_blocks, ptt_path)
                     cur_rep_organism.sources.append(cur_rep_source)
+
 
             if cur_rep_organism.sources:
                 cur_rep_nbr.organisms.append(cur_rep_organism)
@@ -231,15 +195,15 @@ def align_neighborhoods_flanking_regions(neighborhoods):
 
 def write_to_file(nbr, nbr_rep_file):
 
-    cog_def = get_cog_def()
+    cog_def = t.get_cog_def(open(os.path.join(projectDataPath,'additional','COGdef.txt')))
 
-    arcog_def = get_arcog_def()
+    arcog_def = t.get_arcog_def(open(os.path.join(projectDataPath, 'additional', 'arCOGdef.txt')))
 
     workbook = x.Workbook(nbr_rep_file)
     worksheet = workbook.add_worksheet()
 
     row_len = 5
-    column_names = ['From','To','Strand','COG','arCOG']
+    column_names = ['From', 'To', 'Strand', 'COG', 'arCOG']
 
     # Writing header section
 
@@ -255,7 +219,7 @@ def write_to_file(nbr, nbr_rep_file):
 
     top_border = 0
 
-    worksheet.merge_range(0, 0, 0, 10, 'Neighborhood: '+ ' '.join(nbr.cogs), title_format)
+    worksheet.merge_range(0, 0, 0, 10, 'Neighborhood: ' + ' '.join(nbr.cogs), title_format)
     top_border += 1
 
     for arcogid in nbr.cogs:
@@ -286,9 +250,9 @@ def write_to_file(nbr, nbr_rep_file):
             for block in source.blocks:
                 for i in range(len(block)):
                     cur_seq = block[i]
-                    if cur_seq.cogid==None:
-                        cur_seq.cogid='-'
-                    cur_cogid = cur_seq.cogid if len(cur_seq.cogid)==7 else cur_seq.cogid[:-1]
+                    if not cur_seq.cogid:
+                        cur_seq.cogid = '-'
+                    cur_cogid = cur_seq.cogid if len(cur_seq.cogid) == 7 else cur_seq.cogid[:-1]
                     cog_desc = cog_def[cur_cogid] if cog_def.has_key(cur_cogid) else '-'
 
                     arcog_desc = ' '
@@ -299,15 +263,20 @@ def write_to_file(nbr, nbr_rep_file):
                         else:
                             arcog_desc = arcog_def[cur_seq.arcogid[2:]] if '_' in cur_seq.arcogid else arcog_def[cur_seq.arcogid]
                     
-                    data_raw = [cur_seq.pFrom, cur_seq.pTo, cur_seq.strand, cog_desc, arcog_desc,' ']
+                    data_raw = [cur_seq.pFrom, cur_seq.pTo, cur_seq.strand, cog_desc, arcog_desc, ' ']
                     worksheet.write_row(i+top_border, left_border, data_raw)            
                 left_border += row_len+1
 
-
-    # worksheet.write('B1', 'Cell B1', format)
-
-
     workbook.close()
+
+def load_all_neighborhoods():
+    nbr_file = os.path.join(projectDataPath, 'neighborhoods', 'arcog_nbr.txt')
+
+    nbrs = []
+
+    for l in open(nbr_file).readlines():
+        nbrs.append(l.strip().split())
+    return nbrs
 
 
 def write_to_files(nbr_to_report, path):
@@ -315,24 +284,39 @@ def write_to_files(nbr_to_report, path):
     cnt=1
     ffmt='neighborhoods_%d_%d.xlsx'
     for nbr in nbr_to_report:
-        nbr_rep_file = os.path.join(path, ffmt%(len(nbr.cogs),cnt))
-        cnt+=1
+        nbr_rep_file = os.path.join(path, ffmt % (len(nbr.cogs), cnt))
+        cnt += 1
         write_to_file(nbr, nbr_rep_file)
 
 
 if __name__=='__main__':
 
-    t = time.time()
-
     # selected_neighborhood_arcogid_lists = get_selected_neighborhoods()
-    # selected_neighborhoods = pack_neighborhoods(selected_neighborhood_arcogid_lists)
-    #
-    # pickle.dump(selected_neighborhoods, open('selected_nbrhoods.p', 'w'))
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('coverage', type=float, help='minimum coverage of neighborhood to be considered')
+    args = parser.parse_args()
+
+    NEIGHBORHOOD_MATCHING_RATE = args.coverage
+
+    report_files_path = os.path.join(projectDataPath, 'report', 'xls', str(args.coverage))
+    if not os.path.exists(report_files_path):
+        os.mkdir(report_files_path)
+
+    # report_files_path = os.path.join(projectDataPath, 'report', 'xls')
+
+    selected_neighborhood_arcogid_lists = load_all_neighborhoods()
+    selected_neighborhoods = pack_neighborhoods(selected_neighborhood_arcogid_lists)
+    print 'Neighborhoods packed'
+
+    pickle.dump(selected_neighborhoods, open('selected_nbrhoods.p', 'w'))
     selected_neighborhoods = pickle.load(open('selected_nbrhoods.p'))
 
+    print 'Main procedure starting'
     rep_neighborhoods = align_neighborhoods_flanking_regions(selected_neighborhoods)
-    # pickle.dump(rep_neighborhoods, open('rep_neighborhoods.p','w'))
-    # rep_neighborhoods = pickle.load(open('rep_neighborhoods.p'))
-    #
-    # report_files_path = os.path.join(projectDataPath, 'report', 'xls')
-    # write_to_files(rep_neighborhoods, report_files_path)
+
+    pickle.dump(rep_neighborhoods, open('rep_neighborhoods.p', 'w'))
+    rep_neighborhoods = pickle.load(open('rep_neighborhoods.p'))
+    print 'Generating files'
+
+    write_to_files(rep_neighborhoods, report_files_path)

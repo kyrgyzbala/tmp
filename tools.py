@@ -4,6 +4,7 @@ import os
 import sys
 sys.path.append('/users/hudaiber/Projects/lib/BioPy')
 from BioClasses import Gene
+from CogClasses import Block
 
 def getGenomicFiles():
 
@@ -102,3 +103,84 @@ def get_pty_map(folder_path):
                 curGene = Gene(source=chromosome, gid=gid, pFrom=pfrom, pTo=pto, organism=genome, strand=strand)
                 pty_map[gid] = curGene
     return pty_map
+
+
+def get_class_arcogs(class_name):
+    fname = os.path.join(projectDataPath, 'selected_arcogs', 'arcogs_%s.txt'%class_name)
+    return [l.strip() for l in open(fname).readlines()]
+
+
+def get_cog_def(fpath):
+
+    return {l.split()[0]:' '.join(l.split()[1:]) for l in fpath}
+
+
+def get_arcog_def(fpath):
+    def_map = {}
+    for l in fpath:
+        terms = l.split()
+        k = terms[0]
+        v = ' '.join(terms[3:]) if terms[2]=='-' else ' '.join(terms[2:])
+        def_map[k]=v
+    return def_map
+
+
+def merge_to_regions(gene_list):
+    out_list = []
+    for gid in set([g.gid for g in gene_list]):
+        cur_seqs = [g for g in gene_list if g.gid == gid]
+        cur_seq = cur_seqs[0]
+        if len(cur_seqs) > 1:
+            cur_arcog_ids = set([g.arcogid for g in cur_seqs])
+            if len(cur_arcog_ids) > 1:
+                cur_seq.arcogid = ' '.join(cur_arcog_ids)
+        out_list.append(cur_seq)
+
+    return sorted(out_list)
+
+
+def merge_to_blocks(regions, arcog_hits, max_merge_length):
+
+    raw_blocks = []
+    cur_block=[]
+
+    for i in range(len(regions)):
+        cur_gene = regions[i]
+
+        if not cur_block:
+            cur_block.append(cur_gene)
+            continue
+
+        if abs(cur_block[-1].pTo - cur_gene.pFrom) > 1000:
+            raw_blocks.append(cur_block)
+            cur_block = [cur_gene]
+        else:
+            cur_block.append(cur_gene)
+
+    # If the two raw_blocks are within 100 genes, by their further genes, then merge these two into one,
+    # filling the gap between.
+
+    gids = [g.gid for g in arcog_hits]
+
+    merged_blocks = []
+    cur_block = []
+
+    for i in range(len(raw_blocks)):
+        cur_raw_block = raw_blocks[i]
+        if not cur_block:
+            cur_block = cur_raw_block
+            continue
+
+        first_outer = gids.index(cur_block[0].gid)
+        last_outer = gids.index(cur_raw_block[-1].gid)
+
+        if last_outer - first_outer < max_merge_length:
+            cur_block += cur_raw_block
+        else:
+            merged_blocks.append(cur_block)
+            cur_block = cur_raw_block
+
+        if i == len(raw_blocks)-1:
+            merged_blocks.append(cur_block)
+
+    return merged_blocks
