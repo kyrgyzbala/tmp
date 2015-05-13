@@ -118,10 +118,10 @@ def label_class_arcogs(blocks):
     return blocks
 
 
-def add_flanks(nbr_blocks, ptt_path):
+def add_flanks(nbr_blocks, organism, source):
 
     out_blocks = []
-    ptt_map = t.get_ptt_map(ptt_path)
+    ptt_map = t.get_ptt_map(genomesDataPath, ptyGenomesPath, organism, source)
     seqs = sorted(ptt_map.values())
     gids = [s.gid for s in seqs]
 
@@ -173,7 +173,6 @@ def align_neighborhoods_flanking_regions(neighborhoods):
             for source in sources:
                 source_arcog_hits = [g for g in org_arcog_hits if g.src == source]
                 source_arcog_hits.sort()
-                ptt_path = os.path.join(genomesDataPath, organism, '%s.ptt'%source)
 
                 nbr_blocks = get_matching_blocks(source_arcog_hits, nbr.cogs, NEIGHBORHOOD_MATCHING_RATE)
 
@@ -181,7 +180,7 @@ def align_neighborhoods_flanking_regions(neighborhoods):
 
                     cur_rep_source = cc.REP_source(source)
                     # nbr_blocks = label_class_arcogs(nbr_blocks)
-                    cur_rep_source.blocks = add_flanks(nbr_blocks, ptt_path)
+                    cur_rep_source.blocks = add_flanks(nbr_blocks, organism, source)
                     cur_rep_organism.sources.append(cur_rep_source)
 
 
@@ -309,14 +308,14 @@ if __name__=='__main__':
     selected_neighborhoods = pack_neighborhoods(selected_neighborhood_arcogid_lists)
     print 'Neighborhoods packed'
 
-    pickle.dump(selected_neighborhoods, open('selected_nbrhoods.p', 'w'))
-    selected_neighborhoods = pickle.load(open('selected_nbrhoods.p'))
+    pickle.dump(selected_neighborhoods, open('selected_nbrhoods_%s.p' % (str(args.coverage)), 'w'))
+    selected_neighborhoods = pickle.load(open('selected_nbrhoods_%s.p' % (str(args.coverage))))
 
     print 'Main procedure starting'
     rep_neighborhoods = align_neighborhoods_flanking_regions(selected_neighborhoods)
 
-    pickle.dump(rep_neighborhoods, open('rep_neighborhoods.p', 'w'))
-    rep_neighborhoods = pickle.load(open('rep_neighborhoods.p'))
+    pickle.dump(rep_neighborhoods, open('rep_neighborhoods_%s.p' % (str(args.coverage)), 'w'))
+    rep_neighborhoods = pickle.load(open('rep_neighborhoods_%s.p' % (str(args.coverage))))
     print 'Generating files'
 
     write_to_files(rep_neighborhoods, report_files_path)

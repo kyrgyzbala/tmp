@@ -76,10 +76,22 @@ def extract_pty_file(genomes_path, pty_file_path):
                     os.mkdir(cur_genome_path)
 
 
-def get_ptt_map(file_path):
+def pty_to_genes_map(folder_path, source):
+    pty_map = {}
+
+    for l in open(os.path.join(folder_path, '%s.pty'%source)):
+        gid, coordinates, strand, genome, chromosome = l.strip().split()
+        pfrom, pto = coordinates.split('..')
+        curGene = Gene(source=chromosome, gid=gid, pFrom=pfrom, pTo=pto, organism=genome, strand=strand)
+        pty_map[gid] = curGene
+    return pty_map
+
+
+def ptt_to_genes_map(folder_path, source):
+
     ptt_map = {}
-    gnm_name = os.path.dirname(file_path).split('/')[-1]
-    chromosome = os.path.splitext(os.path.basename(file_path))[0]
+    gnm_name = os.path.dirname(folder_path).split('/')[-1]
+    file_path = os.path.join(folder_path, '%s.ptt'%source)
     lines = open(file_path).readlines()[3:]
     for l in lines:
         terms = l.strip().split()
@@ -88,21 +100,44 @@ def get_ptt_map(file_path):
         strand = terms[1]
         pfrom, pto = coordinates.split('..')
         cogid = terms[7]
-        curGene = Gene(source=chromosome, gid=gid, pFrom=pfrom, pTo=pto, organism=gnm_name, strand=strand, cogid=cogid)
+        curGene = Gene(source=source, gid=gid, pFrom=pfrom, pTo=pto, organism=gnm_name, strand=strand, cogid=cogid)
         ptt_map[gid] = curGene
     return ptt_map
 
 
-def get_pty_map(folder_path):
-    pty_map = {}
-    for f in os.listdir(folder_path):
-        if f.endswith('.pty'):
-            for l in open(os.path.join(folder_path, f)):
-                gid, coordinates, strand, genome, chromosome = l.strip().split()
-                pfrom, pto = coordinates.split('..')
-                curGene = Gene(source=chromosome, gid=gid, pFrom=pfrom, pTo=pto, organism=genome, strand=strand)
-                pty_map[gid] = curGene
-    return pty_map
+def get_ptt_map(ptt_path, pty_path, organism, source):
+
+    """Somewhat deceiving function name. It combines ptt and pty into one map"""
+
+    ptt_path = os.path.join(ptt_path, organism)
+    pty_path = os.path.join(pty_path, organism)
+    out_map={}
+    ptt_map, pty_map = {}, {}
+
+    if not os.path.exists(ptt_path):
+        print 'Directory not found:', ptt_path
+    if not os.path.exists(pty_path):
+        print 'Directory not found:', pty_path
+
+    try:
+        ptt_map = ptt_to_genes_map(ptt_path, source)
+    except Exception as e:
+        print 'Could not load ptt for:', ptt_path, source
+        print 'Exception:', e
+        print
+
+    try:
+        pty_map = pty_to_genes_map(pty_path, source)
+    except Exception as e:
+        print 'Could not load pty for:', pty_path, source
+        print 'Exception:', e
+        print
+
+    gids = set(ptt_map.keys()+pty_map.keys())
+    for gid in gids:
+        out_map[gid] = ptt_map[gid] if ptt_map.has_key(gid) else pty_map[gid]
+
+    return out_map
 
 
 def get_class_arcogs(class_name):
